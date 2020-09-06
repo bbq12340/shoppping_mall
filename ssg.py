@@ -6,7 +6,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException, JavascriptException
-import requests
 from bs4 import BeautifulSoup
 import math, time, csv
 import pandas as pd
@@ -60,8 +59,9 @@ def scrape_product_page(browser, product_link):
                 with open(f'{QUERY}.csv', 'a+', encoding='utf-8') as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=',')
                     csv_writer.writerow(row)
-            if len(product_df.index) == review_count:
-                break
+                if len(product_df.index) == review_count:
+                    break
+            #리뷰 다음 페이지 클릭
             try:
                 browser.execute_script("document.getElementById('comment_navi_area').getElementsByTagName('strong')[0].nextElementSibling.click();")
             except JavascriptException:
@@ -81,11 +81,7 @@ def scrape_current_page(browser, PRODUCTS):
 
 def pagination(browser, LIMITED_ITEMS):
     print("------------------------------------------------------------\n\n 신세계몰 스크롤링 중....\n\n")
-    """
-    엑셀에 들어갈 최대의 데이터 프레임
-    각 (상품+ 리뷰)의 데이터 프레임을 추가해줄것이다.
-    """
-    url = browser.current_url
+    url = browser.current_url #다음페이지에 들어가기 위해 필요
     thumb_list_by_class = By.CLASS_NAME, 'cunit_thmb_lst'
     wait = WebDriverWait(browser, 30)
     wait.until(EC.presence_of_element_located(thumb_list_by_class))
@@ -97,7 +93,9 @@ def pagination(browser, LIMITED_ITEMS):
         print(f'크롤링할 총 상품 수: {LIMITED_ITEMS}')
         PRODUCTS= []
         while len(PRODUCTS) < LIMITED_ITEMS:
+            wait.until(EC.presence_of_element_located(thumb_list_by_class))
             PRODUCTS = scrape_current_page(browser, PRODUCTS)
+            #다음페이지 클릭
             current_page = browser.find_element_by_class_name('com_paginate').find_element_by_tag_name('strong').get_attribute('innerText')
             next_page = int(current_page)+1
             browser.get(f"{url}&page={next_page}")
@@ -112,8 +110,10 @@ def pagination(browser, LIMITED_ITEMS):
     else:
         print(f'크롤링할 총 상품 수: {item_count}')
         PRODUCTS= []
-        while len(PRODUCTS) < LIMITED_ITEMS:
+        while len(PRODUCTS) < item_count:
+            wait.until(EC.presence_of_element_located(thumb_list_by_class))
             PRODUCTS = scrape_current_page(browser, PRODUCTS)
+            #다음페이지 클릭
             current_page = browser.find_element_by_class_name('com_paginate').find_element_by_tag_name('strong').get_attribute('innerText')
             next_page = int(current_page)+1
             browser.get(f"{url}&page={next_page}")
