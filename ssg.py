@@ -6,16 +6,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException, JavascriptException
-import requests
 from bs4 import BeautifulSoup
 import math, time, csv
 import pandas as pd
 
-URL = 'http://www.ssg.com/search.ssg?target=all&query=%ED%8B%B0%EC%85%94%EC%B8%A0'
-QUERY = URL.split('query=')[-1]
-
 def scrape_product_page(browser, product_link):
-    product_df = pd.DataFrame([], columns=['상품명', '가격', '평점', '리뷰','작성일', '링크']) #1개 상품 데이터 프레임 - 리뷰의 수에 따라 열 크기가 정해진다
+    product_df = pd.read_csv('ssg.csv', encoding='utf-8') 
     product_link = "http://www.ssg.com"+product_link
     try:
         browser.get(product_link)
@@ -29,20 +25,19 @@ def scrape_product_page(browser, product_link):
     title = soup.find('h2', {'class': 'cdtl_info_tit'}).text
     print(f'\n현재 크롤링 중인 상품: {title}')
     price = soup.find('span', {'class': 'cdtl_new_price'}).text.replace('\n','').replace('원','').replace('최적가', '')
-    no_review = soup.find('p', text='등록된 리뷰가 없습니다.')
+    review_count = int(soup.find('div', {'class': 'cdtl_cmt_titarea'}).find('em').text.replace(',',''))
     #리뷰가 없는 경우
-    if no_review:
+    if review_count == 0:
         print('리뷰 수: 0')
         rate = None
         review = None
         date = None
         row = [title, price, rate, review, date, product_link]
-        with open(f'{QUERY}.csv', 'a+', encoding='utf-8') as csvfile:
+        with open('ssg.csv', 'a+', encoding='utf-8') as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=',')
             csv_writer.writerow(row)
     #리뷰가 있는 경우
     else:
-        review_count = int(soup.find('div', {'class': 'cdtl_cmt_titarea'}).find('em').text) #리뷰 수
         print(f'리뷰 수: {review_count}')
         while len(product_df.index) < review_count:
             time.sleep(0.5)
@@ -52,16 +47,21 @@ def scrape_product_page(browser, product_link):
             tr = review_table.find_all('tr')[0::2]
             for r in tr:
                 rate = r.find('td', {'class': 'star'}).find('em').text
-                review = r.find('div', {'class': 'cdtl_cmt_tx'}).text.replace('\n','')
+                review = r.find('div', {'class': 'cdtl_cmt_tx'})
+                if review:
+                    review = review.text.replace('\n','')
+                else:
+                    review = None
                 date = r.find('td', {'class': 'date'}).text.replace(' ','')
                 row = [title, price, rate, review, date, product_link]
-                row_df = pd.DataFrame([row], columns=list(product_df.columns))
-                product_df = product_df.append(row_df, ignore_index=True)
-                with open(f'{QUERY}.csv', 'a+', encoding='utf-8') as csvfile:
+                with open('ssg.csv', 'a+', encoding='utf-8') as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=',')
                     csv_writer.writerow(row)
-            if len(product_df.index) == review_count:
-                break
+                product_df = pd.read_csv('ssg.csv', encoding='utf-8')
+                product_df = product_df[product_df['상품명'] == title]
+                if len(product_df.index) == review_count:
+                    break
+            #리뷰 다음 페이지 클릭
             try:
                 browser.execute_script("document.getElementById('comment_navi_area').getElementsByTagName('strong')[0].nextElementSibling.click();")
             except JavascriptException:
@@ -81,11 +81,7 @@ def scrape_current_page(browser, PRODUCTS):
 
 def pagination(browser, LIMITED_ITEMS):
     print("------------------------------------------------------------\n\n 신세계몰 스크롤링 중....\n\n")
-    """
-    엑셀에 들어갈 최대의 데이터 프레임
-    각 (상품+ 리뷰)의 데이터 프레임을 추가해줄것이다.
-    """
-    url = browser.current_url
+    url = browser.current_url #다음페이지에 들어가기 위해 필요
     thumb_list_by_class = By.CLASS_NAME, 'cunit_thmb_lst'
     wait = WebDriverWait(browser, 30)
     wait.until(EC.presence_of_element_located(thumb_list_by_class))
@@ -97,7 +93,9 @@ def pagination(browser, LIMITED_ITEMS):
         print(f'크롤링할 총 상품 수: {LIMITED_ITEMS}')
         PRODUCTS= []
         while len(PRODUCTS) < LIMITED_ITEMS:
+            wait.until(EC.presence_of_element_located(thumb_list_by_class))
             PRODUCTS = scrape_current_page(browser, PRODUCTS)
+            #다음페이지 클릭
             current_page = browser.find_element_by_class_name('com_paginate').find_element_by_tag_name('strong').get_attribute('innerText')
             next_page = int(current_page)+1
             browser.get(f"{url}&page={next_page}")
@@ -112,8 +110,10 @@ def pagination(browser, LIMITED_ITEMS):
     else:
         print(f'크롤링할 총 상품 수: {item_count}')
         PRODUCTS= []
-        while len(PRODUCTS) < LIMITED_ITEMS:
+        while len(PRODUCTS) < item_count:
+            wait.until(EC.presence_of_element_located(thumb_list_by_class))
             PRODUCTS = scrape_current_page(browser, PRODUCTS)
+            #다음페이지 클릭
             current_page = browser.find_element_by_class_name('com_paginate').find_element_by_tag_name('strong').get_attribute('innerText')
             next_page = int(current_page)+1
             browser.get(f"{url}&page={next_page}")
@@ -139,6 +139,6 @@ def extract_ssg(url):
     LIMITED_ITEMS = 1000
     browser = open_browser(url)
     pagination(browser, LIMITED_ITEMS)
-    
-
-extract_ssg(URL)
+    browser.quit()
+    df = pd.read_csv('ssg.csv', encoding='utf-8', index_col=0) 
+    return df
