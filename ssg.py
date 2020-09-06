@@ -57,8 +57,11 @@ def scrape_product_page(browser, product_link):
                 with open('ssg.csv', 'a+', encoding='utf-8') as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=',')
                     csv_writer.writerow(row)
+<<<<<<< HEAD
                 product_df = pd.read_csv('ssg.csv', encoding='utf-8')
                 product_df = product_df[product_df['상품명'] == title]
+=======
+>>>>>>> 3ecc937d58415cb2dde92d3a74e8d36e8e1300c2
                 if len(product_df.index) == review_count:
                     break
             #리뷰 다음 페이지 클릭
