@@ -5,20 +5,26 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException, JavascriptException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException, JavascriptException, UnexpectedAlertPresentException
 from bs4 import BeautifulSoup
 import math, time, csv
 import pandas as pd
 
 def scrape_product_page(browser, product_link):
-    product_df = pd.read_csv('ssg.csv', encoding='utf-8') 
+    product_df = pd.read_csv('source/ssg.csv', encoding='utf-8') 
     product_link = "http://www.ssg.com"+product_link
     try:
         browser.get(product_link)
     except TimeoutException:
         time.sleep(3)
         browser.refresh()
-    browser.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+    time.sleep(1)
+    try:
+        browser.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+    except UnexpectedAlertPresentException:
+        with open('bug_url.txt', 'a') as f:
+            f.write(f'{product_link}\n')
+        return
     time.sleep(1)
     html = browser.execute_script('return document.body.outerHTML')
     soup = BeautifulSoup(html, 'html.parser')
@@ -26,38 +32,42 @@ def scrape_product_page(browser, product_link):
     print(f'\n현재 크롤링 중인 상품: {title}')
     price = soup.find('span', {'class': 'cdtl_new_price'}).text.replace('\n','').replace('원','').replace('최적가', '')
     review_count = int(soup.find('div', {'class': 'cdtl_cmt_titarea'}).find('em').text.replace(',',''))
+    product_df = product_df[product_df['상품명'] == title] #source/coupang.csv 데이터 프레임 중 '상품명' 이 같은 열.
     #리뷰가 없는 경우
     if review_count == 0:
+        if len(product_df) == 1:
+            return
         print('리뷰 수: 0')
         rate = None
         review = None
         date = None
         row = [title, price, rate, review, date, product_link]
-        with open('ssg.csv', 'a+', encoding='utf-8') as csvfile:
+        with open('source/ssg.csv', 'a+', encoding='utf-8') as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=',')
             csv_writer.writerow(row)
     #리뷰가 있는 경우
     else:
         print(f'리뷰 수: {review_count}')
         while len(product_df.index) < review_count:
-            time.sleep(0.5)
+            time.sleep(1)
             html = browser.execute_script('return document.body.outerHTML')
             soup = BeautifulSoup(html, 'html.parser')
             review_table = soup.find('tbody',{'id':'cdtl_cmt_tbody'})
             tr = review_table.find_all('tr')[0::2]
             for r in tr:
                 rate = r.find('td', {'class': 'star'}).find('em').text
-                review = r.find('div', {'class': 'cdtl_cmt_tx'})
+                review = r.find('td', {'class': 'desc_txt'})
                 if review:
                     review = review.text.replace('\n','')
+                    review = ' '.join(review.split())
                 else:
                     review = None
                 date = r.find('td', {'class': 'date'}).text.replace(' ','')
                 row = [title, price, rate, review, date, product_link]
-                with open('ssg.csv', 'a+', encoding='utf-8') as csvfile:
+                with open('source/ssg.csv', 'a+', encoding='utf-8') as csvfile:
                     csv_writer = csv.writer(csvfile, delimiter=',')
                     csv_writer.writerow(row)
-                product_df = pd.read_csv('ssg.csv', encoding='utf-8')
+                product_df = pd.read_csv('source/ssg.csv', encoding='utf-8')
                 product_df = product_df[product_df['상품명'] == title]
                 if len(product_df.index) == review_count:
                     break
@@ -140,5 +150,5 @@ def extract_ssg(url):
     browser = open_browser(url)
     pagination(browser, LIMITED_ITEMS)
     browser.quit()
-    df = pd.read_csv('ssg.csv', encoding='utf-8', index_col=0) 
+    df = pd.read_csv('source/ssg.csv', encoding='utf-8', index_col=0) 
     return df
